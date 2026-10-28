@@ -1,0 +1,94 @@
+[package]
+name = "reader-rust"
+version = "1.6.0"
+edition = "2021"
+
+# The desktop app is a workspace member so it shares this target/ directory, but
+# `default-members` keeps bare `cargo build` / `cargo test` (and the Dockerfile)
+# building the server only. Build the desktop app with `-p reader-desktop`.
+[workspace]
+members = ["desktop/src-tauri"]
+default-members = ["."]
+
+[dependencies]
+tauri = { version = "2" }
+tauri-plugin-global-shortcut = "2"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip", "brotli", "deflate", "blocking", "cookies"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+config = "0.14"
+dotenvy = "0.15"
+thiserror = "1"
+anyhow = "1"
+aes = "0.8"
+bytes = "1"
+cbc = "0.1"
+des = "0.8"
+ecb = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+encoding_rs = "0.8"
+cookie_store = "0.22"
+flate2 = "1"
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+serde_with = "3"
+scraper = "0.20"
+jsonpath_lib = "0.3"
+regex = "1"
+rquickjs = { version = "0.7", features = ["futures"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "request-id", "fs"] }
+http = "1"
+http-body-util = "0.1"
+# Edge 朗读（edge-tts）走 WebSocket：微软的非官方公共接口，必须用 rustls
+# 且不引 openssl（Windows 上 openssl 需要额外 DLL/编译链）。证书根与 reqwest
+# 的 rustls-tls 保持一致（webpki 内置根）。
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+urlencoding = "2"
+serde_urlencoded = "0.7"
+futures = "0.3"
+rand = "0.8"
+once_cell = "1"
+tokio-stream = "0.1"
+feed-rs = "1"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+sxd-xpath = "0.4"
+sxd-document = "0.3"
+quick-xml = "0.31"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+tauri-plugin-dialog = "2"
+# PDF 解析/提取。lopdf 不单独依赖: 用 pdf-extract 重导出的那份, 避免
+# 两个 lopdf 版本各自算一套页序。
+pdf-extract = "0.12.0"
+# Web 阅读模式 (`src/server/`)。axum 曾是 dev-only 依赖(仅测试里的 mock 上游),
+# 现在也承载进程内的 HTTP 服务, 因此提升为正式依赖。
+axum = { version = "0.7", features = ["json", "multipart"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.55"
+
+[dev-dependencies]
+# Only used by tests/*.rs to spin up local mock upstream sites.
+tokio = { version = "1", features = ["full"] }
+# `server::router` 的 body-limit 回归要直接 poll 一个 Router。
+tower = { version = "0.5", features = ["util"] }
+
+# pdf-extract 上游 0.12.0 遇到无 ToUnicode 的 GBK-EUC-H 等 Type0 编码会直接
+# panic (LaTeX CJK 产物常见)。vendor 副本加了 GBK/Big5 系 CMap 的近似解码:
+# 恒等字节映射 + encoding_rs 逐码位解码当伪 ToUnicode 表。
+#
+# tao 不再 vendor: 0.37.2 已包含 tauri-apps/tao#1353 的修复(「最大化后进无边框
+# 全屏会在底部露出任务栏高度的空隙」), 也就是当初打补丁的唯一原因。用官方版本
+# 后前端同样不需要 unmaximize 变通, 退出全屏仍是一步到位。
+# 注意 tao 由 tauri-runtime-wry 引入, 升级 tauri 必须同步到 2.12.x —— 2.11.x
+# 约束的是 tao 0.35, 换不上去。
+[patch.crates-io]
+pdf-extract = { path = "vendor/pdf-extract" }

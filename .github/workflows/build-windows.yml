@@ -1,0 +1,55 @@
+name: Build Windows Desktop (with Floating Text Mode)
+
+# 云端打包：无需本地装 Rust / MSVC / NSIS。
+# GitHub 的 windows-latest runner 已预装 Rust stable (msvc)、MSVC 工具链、NSIS、WebView2、Node。
+#
+# 用法：
+#   1. 把本仓库（已含 float-mode.patch 改动 / 或已 git apply）push 到 GitHub。
+#   2. 仓库 → Actions → 选 "Build Windows Desktop" → Run workflow（手动触发）；
+#      或给代码打 tag（v*）自动触发。
+#   3. 跑完后到 Actions 页面的 Artifacts 下载 reader-desktop-windows，
+#      里面含：Reader_1.6.0_x64-setup.exe（NSIS 安装包）+ reader-portable-v1.6.0-win-x64.zip（免安装版）。
+#
+# 注意：未做代码签名，安装/运行时会触发 Windows SmartScreen “未知发布者”警告，
+#       点“仍要运行”即可；若要消除需自行配置代码签名证书。
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Ensure Rust stable (msvc)
+        run: |
+          rustup default stable
+          rustup target add x86_64-pc-windows-msvc
+        shell: bash
+
+      - name: Build frontend + Tauri bundle
+        # build-desktop.mjs 内部会：frontend npm ci → npm run build → tauri build(CARGO_BUILD_JOBS=4) → 拷贝安装包/便携包到 desktop/dist
+        run: |
+          cd desktop
+          npm install
+          npm run build
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-desktop-windows
+          path: |
+            desktop/dist/*_x64-setup.exe
+            desktop/dist/*-win-x64.zip
+          if-no-files-found: error

@@ -1,0 +1,373 @@
+<template>
+  <div
+    class="bottom-nav-shell"
+    :class="`theme-${theme}`"
+    @touchmove.prevent="handleTouchMove"
+    @touchend="handleTouchEnd"
+    @touchcancel="handleTouchEnd"
+    @mousemove="handleMouseMove"
+    @mouseup="handleMouseUp"
+    @mouseleave="handleMouseUp"
+  >
+    <div ref="navRef" class="bottom-nav">
+      <div v-if="indicatorStyle" class="nav-indicator" :style="indicatorStyle" />
+      <button
+        v-for="item in items"
+        :key="item.key"
+        :ref="(el) => setItemRef(el, item.key)"
+        class="nav-item"
+        :class="{ active: activeKey === item.key }"
+        :style="getItemStyle(item.key)"
+        :title="item.label"
+        @click="go(item.path)"
+        @touchstart="handlePointerStart($event, item.key)"
+        @mousedown.prevent="handlePointerStart($event, item.key)"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path v-for="(path, index) in item.paths" :key="index" :d="path" />
+        </svg>
+        <span :style="getLabelStyle(item.key)">{{ item.label }}</span>
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useAppStore } from '../stores/app'
+
+type NavKey = 'home' | 'explore' | 'recent' | 'rss'
+
+const router = useRouter()
+const route = useRoute()
+const appStore = useAppStore()
+
+const allItems: Array<{ key: NavKey; label: string; path: string; paths: string[] }> = [
+  {
+    key: 'home',
+    label: '书架',
+    path: '/',
+    paths: ['M4 5.5A2.5 2.5 0 0 1 6.5 3H20', 'M4 5.5V19a2 2 0 0 0 2 2h14', 'M8 7h8', 'M8 11h8', 'M8 15h5'],
+  },
+  {
+    key: 'explore',
+    label: '书海',
+    path: '/explore',
+    paths: ['M12 3a9 9 0 1 0 9 9', 'm16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z'],
+  },
+  {
+    key: 'recent',
+    label: '统计',
+    path: '/stats',
+    paths: ['M12 7v5l3 2', 'M12 3a9 9 0 1 0 9 9'],
+  },
+  {
+    key: 'rss',
+    label: 'RSS',
+    path: '/rss',
+    paths: ['M4 11a9 9 0 0 1 9 9', 'M4 4a16 16 0 0 1 16 16', 'M5 19h.01'],
+  },
+]
+
+// 过滤不可见的入口。判断集中在 `appStore.isNavVisible`:
+// - 桌面端按用户偏好隐藏统计/RSS;
+// - Web 端只保留书架与最近阅读(其余能力没有对应的后端实现, 留着会让人以为坏了)。
+const items = computed(() => allItems.filter((item) => appStore.isNavVisible(item.key)))
+
+const navRef = ref<HTMLElement | null>(null)
+const itemRefs = ref<Record<NavKey, HTMLElement | null>>({
+  home: null,
+  explore: null,
+  recent: null,
+  rss: null,
+})
+const dragging = ref(false)
+const dragX = ref(0)
+const pointerOffsetX = ref(0)
+const indicatorRect = ref({ left: 0, width: 0 })
+
+const activeKey = computed<NavKey>(() => {
+  if (route.path.startsWith('/explore')) return 'explore'
+  if (route.path.startsWith('/stats')) return 'recent'
+  if (route.path.startsWith('/rss')) return 'rss'
+  return 'home'
+})
+const theme = computed(() => appStore.theme)
+
+function setItemRef(el: Element | { $el?: Element } | null, key: NavKey) {
+  const resolved = el instanceof HTMLElement
+    ? el
+    : el && '$el' in el && el.$el instanceof HTMLElement
+      ? el.$el
+      : null
+  itemRefs.value[key] = resolved
+}
+
+function syncIndicatorToActive() {
+  const nav = navRef.value
+  const target = itemRefs.value[activeKey.value]
+  if (!nav || !target) return
+  const navRect = nav.getBoundingClientRect()
+  const rect = target.getBoundingClientRect()
+  indicatorRect.value = {
+    left: rect.left - navRect.left,
+    width: rect.width,
+  }
+}
+
+function go(path: string) {
+  if (route.path !== path) {
+    router.push(path)
+  }
+}
+
+function nearestKey(clientX: number): NavKey {
+  const nav = navRef.value
+  if (!nav) return activeKey.value
+  const navRect = nav.getBoundingClientRect()
+  let winner: NavKey = activeKey.value
+  let winnerDistance = Number.POSITIVE_INFINITY
+  for (const item of items.value) {
+    const el = itemRefs.value[item.key]
+    if (!el) continue
+    const rect = el.getBoundingClientRect()
+    const centerX = rect.left - navRect.left + rect.width / 2
+    const distance = Math.abs(clientX - navRect.left - centerX)
+    if (distance < winnerDistance) {
+      winnerDistance = distance
+      winner = item.key
+    }
+  }
+  return winner
+}
+
+function getClientX(event: TouchEvent | MouseEvent) {
+  return 'touches' in event ? event.touches[0]?.clientX ?? 0 : event.clientX
+}
+
+function handlePointerStart(event: TouchEvent | MouseEvent, key: NavKey) {
+  const nav = navRef.value
+  const el = itemRefs.value[key]
+  if (!nav || !el) return
+  const navRect = nav.getBoundingClientRect()
+  const rect = el.getBoundingClientRect()
+  dragging.value = true
+  pointerOffsetX.value = getClientX(event) - rect.left
+  dragX.value = rect.left - navRect.left
+}
+
+function handleTouchMove(event: TouchEvent) {
+  if (!dragging.value || !navRef.value) return
+  const navRect = navRef.value.getBoundingClientRect()
+  const width = indicatorRect.value.width || itemRefs.value[activeKey.value]?.getBoundingClientRect().width || 0
+  dragX.value = Math.min(
+    Math.max(getClientX(event) - navRect.left - pointerOffsetX.value, 0),
+    Math.max(0, navRect.width - width),
+  )
+}
+
+function handleMouseMove(event: MouseEvent) {
+  if (!dragging.value || !navRef.value) return
+  const navRect = navRef.value.getBoundingClientRect()
+  const width = indicatorRect.value.width || itemRefs.value[activeKey.value]?.getBoundingClientRect().width || 0
+  dragX.value = Math.min(
+    Math.max(event.clientX - navRect.left - pointerOffsetX.value, 0),
+    Math.max(0, navRect.width - width),
+  )
+}
+
+function handleTouchEnd() {
+  if (!dragging.value) return
+  const key = nearestKey((navRef.value?.getBoundingClientRect().left || 0) + dragX.value + indicatorRect.value.width / 2)
+  dragging.value = false
+  go(items.value.find((item) => item.key === key)?.path || '/')
+  nextTick(syncIndicatorToActive)
+}
+
+function handleMouseUp() {
+  if (!dragging.value) return
+  const key = nearestKey((navRef.value?.getBoundingClientRect().left || 0) + dragX.value + indicatorRect.value.width / 2)
+  dragging.value = false
+  go(items.value.find((item) => item.key === key)?.path || '/')
+  nextTick(syncIndicatorToActive)
+}
+
+const indicatorStyle = computed(() => {
+  const left = dragging.value ? dragX.value : indicatorRect.value.left
+  const width = indicatorRect.value.width
+  if (!width) return null
+  return {
+    width: `${width}px`,
+    transform: `translate3d(${left}px, 0, 0)`,
+  }
+})
+
+function getIndicatorCenter() {
+  const left = dragging.value ? dragX.value : indicatorRect.value.left
+  return left + indicatorRect.value.width / 2
+}
+
+function getItemDistortion(key: NavKey) {
+  if (!dragging.value || !navRef.value) return { stretch: 0, lift: 0, fade: 0 }
+  const el = itemRefs.value[key]
+  if (!el) return { stretch: 0, lift: 0, fade: 0 }
+  const navRect = navRef.value.getBoundingClientRect()
+  const rect = el.getBoundingClientRect()
+  const center = rect.left - navRect.left + rect.width / 2
+  const distance = Math.abs(center - getIndicatorCenter())
+  const influence = Math.max(0, 1 - distance / 150)
+  return {
+    stretch: influence,
+    lift: influence * 7,
+    fade: influence * 0.18,
+  }
+}
+
+function getItemStyle(key: NavKey) {
+  const { stretch, lift, fade } = getItemDistortion(key)
+  if (!stretch) return undefined
+  return {
+    transform: `translateY(${-lift}px) scale(${1 - stretch * 0.09}, ${1 + stretch * 0.09})`,
+    opacity: `${1 - fade}`,
+  }
+}
+
+function getLabelStyle(key: NavKey) {
+  const { stretch } = getItemDistortion(key)
+  if (!stretch) return undefined
+  return {
+    transform: `scale(${1 - stretch * 0.05}, ${1 + stretch * 0.05})`,
+  }
+}
+
+watch(activeKey, () => nextTick(syncIndicatorToActive))
+onMounted(() => {
+  nextTick(syncIndicatorToActive)
+  window.addEventListener('resize', syncIndicatorToActive)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncIndicatorToActive)
+})
+</script>
+
+<style scoped>
+.bottom-nav-shell {
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + var(--safe-area-bottom));
+  transform: translateX(-50%);
+  z-index: calc(var(--z-sticky) + 2);
+  width: min(620px, calc(100vw - 24px));
+}
+
+.bottom-nav {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  align-items: center;
+  gap: 5px;
+  padding: 7px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-bg-elevated) 93%, transparent);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+}
+
+.bottom-nav-shell.theme-dark .bottom-nav {
+  background: color-mix(in srgb, var(--color-bg-elevated) 91%, transparent);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-lg);
+}
+
+.nav-indicator {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-bg);
+  border: 1px solid var(--color-primary-border);
+  box-shadow: none;
+  transition: transform 380ms cubic-bezier(0.2, 0.85, 0.22, 1), width 380ms cubic-bezier(0.2, 0.85, 0.22, 1);
+  will-change: transform;
+}
+
+.bottom-nav-shell.theme-dark .nav-indicator {
+  background: var(--color-primary-bg);
+  border-color: var(--color-primary-border);
+  box-shadow: none;
+}
+
+.nav-item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 54px;
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.bottom-nav-shell.theme-dark .nav-item {
+  color: var(--color-text-secondary);
+}
+
+.nav-item svg {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.nav-item span {
+  display: inline-flex;
+  transform-origin: center center;
+}
+
+.nav-item.active {
+  color: var(--color-primary);
+}
+
+.bottom-nav-shell.theme-dark .nav-item.active {
+  color: var(--color-primary);
+}
+
+.nav-item:active {
+  transform: scale(0.98);
+}
+
+@media (max-width: 640px) {
+  .bottom-nav-shell {
+    width: calc(100vw - 16px);
+    bottom: calc(8px + var(--safe-area-bottom));
+  }
+
+  .bottom-nav {
+    gap: 3px;
+    padding: 5px;
+  }
+
+  .nav-item {
+    min-height: 52px;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .nav-indicator {
+    top: 5px;
+    bottom: 5px;
+  }
+
+  .nav-item svg {
+    width: 23px;
+    height: 23px;
+  }
+}
+</style>
