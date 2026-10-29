@@ -73,6 +73,7 @@ import ContextMenu from './components/ContextMenu.vue'
 import TitleBar from './components/TitleBar.vue'
 import { resolveWindowClose } from './utils/windowClose'
 import { resolveShellBackgroundImage } from './utils/readerColor'
+import { isTauriRuntime } from './api/transport'
 
 const route = useRoute()
 const appStore = useAppStore()
@@ -130,6 +131,22 @@ const stopBackgroundClassSync = watch(showCustomBackground, (active) => {
   document.body.classList.toggle('custom-background-active', active)
 }, { immediate: true })
 
+const stopFloatClassSync = watch(
+  () => appStore.floatMode,
+  (active) => {
+    if (typeof document === 'undefined') return
+    // 透明必须贯穿整条 DOM 根链: html → body → #app → .app-shell。
+    // 只把 .app-shell 设为透明没用 —— global.css 与 index.html 给 html/body/#app
+    // 都铺了 --color-bg(米色), 任一层不透明, 桌面就透不出来(这正是之前背景仍是
+    // 米色的根因)。三处一起用 float-mode 类 + !important 掀掉, 桌面才会透出。
+    document.documentElement.classList.toggle('float-mode', active)
+    document.body.classList.toggle('float-mode', active)
+    const appEl = document.getElementById('app')
+    if (appEl) appEl.classList.toggle('float-mode', active)
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   void appStore.runStartupVersionCheck()
   void appStore.applyBossKey().catch(() => undefined)
@@ -140,6 +157,7 @@ onMounted(() => {
 
 let closeUnlisten: (() => void) | undefined
 let legadoUnlisten: (() => void) | undefined
+let f12Unlisten: (() => void) | undefined
 let handlingCloseRequest = false
 
 /**
@@ -215,12 +233,33 @@ onMounted(() => {
   })
 })
 
+onMounted(() => {
+  // F12 全局快捷键: 进入/退出悬浮文字模式, 对标 binbyu/Reader 的 F12 隐藏/显示。
+  // 用捕获阶段 + preventDefault, 抢在其它监听器之前, 并阻止 F12 在调试构建里唤起 DevTools。
+  if (typeof window === 'undefined' || !isTauriRuntime()) return
+  const handler = (event: KeyboardEvent) => {
+    if (event.key === 'F12') {
+      event.preventDefault()
+      event.stopPropagation()
+      void appStore.toggleFloatMode().catch(() => undefined)
+    }
+  }
+  window.addEventListener('keydown', handler, true)
+  f12Unlisten = () => window.removeEventListener('keydown', handler, true)
+})
+
 onBeforeUnmount(() => {
   closeUnlisten?.()
   legadoUnlisten?.()
+  f12Unlisten?.()
   stopBackgroundClassSync()
+  stopFloatClassSync()
   if (typeof document !== 'undefined') {
     document.body.classList.remove('custom-background-active')
+    document.body.classList.remove('float-mode')
+    document.documentElement.classList.remove('float-mode')
+    const appEl = document.getElementById('app')
+    if (appEl) appEl.classList.remove('float-mode')
   }
 })
 
@@ -479,6 +518,18 @@ body.custom-background-active .detail-modal :is(.tag, .action-btn:not(.primary))
 }
 .app-shell.float-mode .app-custom-background {
   display: none;
+}
+/* 整条根链透明: 这是悬浮文字模式「只看文字」的关键。html/body/#app 在 global.css
+   与 index.html 里都被铺了 --color-bg(米色), 必须用 float-mode 类 + !important
+   把它们一起掀掉, 桌面才会透出来。 */
+html.float-mode,
+body.float-mode,
+#app.float-mode {
+  background: transparent !important;
+}
+/* 正文字浮在任意壁纸上都要可读: 加一层柔和阴影, 类似 binbyu/Reader 的描边效果。 */
+.app-shell.float-mode .reader-view {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 /* 顶部 10px 透明拖拽条: 抓取移动悬浮窗口, 平时不可见。 */
 .float-drag-strip {
