@@ -153,6 +153,7 @@ pub fn toggle_mini_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
     Ok(WindowMode {
         mini_mode: state.mini_mode,
         always_on_top: state.mini_mode || state.float_mode,
+        float_mode: state.float_mode,
     })
 }
 
