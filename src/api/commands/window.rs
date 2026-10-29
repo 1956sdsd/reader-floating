@@ -179,6 +179,11 @@ pub fn toggle_float_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
     // 置顶 = 迷你模式 || 悬浮模式, 两者都关才取消置顶。
     let _ = window.set_always_on_top(state.mini_mode || entering_float);
 
+    // 悬浮模式关掉窗口阴影: Win10 下透明窗口的 DWM 阴影会被画成一圈可见边框
+    // (tauri-apps/tauri#11654), 关掉它边框即消失。退出悬浮时恢复阴影, 常规窗口
+    // 有阴影更自然。
+    let _ = window.set_shadow(!entering_float);
+
     Ok(WindowMode {
         mini_mode: state.mini_mode,
         always_on_top: state.mini_mode || entering_float,

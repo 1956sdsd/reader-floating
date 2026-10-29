@@ -2,6 +2,7 @@
   <div
     class="reader-view"
     :class="{ 'disable-system-callout': disableSystemCallout }"
+    :data-tauri-drag-region="appStore.floatMode ? '' : undefined"
     :style="{
       background: appStore.floatMode ? 'transparent' : (shellPaintsBackground ? 'transparent' : theme.body),
       color: theme.fontColor,

@@ -348,6 +348,8 @@ fn start(app: &mut App, paths: &portable::Paths) -> anyhow::Result<()> {
     // 悬浮文字模式: 启动即置顶(透明背景由前端在 float-mode 下切到透明)。
     if initial_float {
         let _ = window.set_always_on_top(true);
+        // 启动即悬浮时一并关掉阴影, 否则 Win10 透明窗口会露出一圈边框(issue #11654)。
+        let _ = window.set_shadow(false);
     }
 
     // 兜底: 页面加载失败(WebView2 异常、资源损坏)时 `on_page_load` 不会触发,

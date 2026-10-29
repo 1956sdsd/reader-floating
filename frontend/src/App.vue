@@ -21,8 +21,6 @@
          最大化/关闭、迷你模式)。浏览器里没有窗口可控制, 留着只会显示三个
          点了没反应的按钮, 还白占 30px 顶部空间。 -->
     <TitleBar v-if="!appStore.isWebMode && !appStore.floatMode" :surface="titlebarSurface" />
-    <!-- 悬浮文字模式: 标题栏已隐藏, 用一条近乎透明的顶部拖拽条移动窗口。 -->
-    <div v-if="appStore.floatMode" class="float-drag-strip" data-tauri-drag-region></div>
     <div class="app-body">
       <AppTopBar v-if="showHeader" />
       <main class="app-main" :class="{ 'with-bottom-nav': showBottomNav, 'without-header': !showHeader }">
@@ -515,6 +513,10 @@ body.custom-background-active .detail-modal :is(.tag, .action-btn:not(.primary))
 /* 悬浮文字模式: 外壳透明、隐藏背景图层, 桌面透出; 仅正文渲染。 */
 .app-shell.float-mode {
   background: transparent !important;
+  /* 悬浮模式正文不可选中/复制, 光标也别显示成文本(I-beam), 避免误以为能选字。 */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
 .app-shell.float-mode .app-custom-background {
   display: none;
@@ -530,15 +532,6 @@ body.float-mode,
 /* 正文字浮在任意壁纸上都要可读: 加一层柔和阴影, 类似 binbyu/Reader 的描边效果。 */
 .app-shell.float-mode .reader-view {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-/* 顶部 10px 透明拖拽条: 抓取移动悬浮窗口, 平时不可见。 */
-.float-drag-strip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 10px;
-  z-index: calc(var(--z-modal) + 25);
 }
 /* 右下角退出按钮: 低透明度常驻, 悬停高亮, 保证标题栏隐藏后可退出。 */
 .float-exit {
