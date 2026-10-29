@@ -533,6 +533,16 @@ body.float-mode,
 .app-shell.float-mode .reader-view {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
+/* 悬浮模式强制禁选: .chapter-text 及其内部 p 自带 user-select:text,
+   特异性(0,1,0)/(0,2,0) 会盖掉外壳 .app-shell.float-mode 的 none(0,2,0 不带 !important),
+   导致 F12 模式下文字仍可被选中复制。这里用更高特异性 + !important 压住,
+   确保「禁止复制」真正生效。 */
+.app-shell.float-mode .chapter-text,
+.app-shell.float-mode .chapter-text * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
 /* 右下角退出按钮: 低透明度常驻, 悬停高亮, 保证标题栏隐藏后可退出。 */
 .float-exit {
   position: fixed;

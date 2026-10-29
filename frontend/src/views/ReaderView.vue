@@ -2,7 +2,6 @@
   <div
     class="reader-view"
     :class="{ 'disable-system-callout': disableSystemCallout }"
-    :data-tauri-drag-region="appStore.floatMode ? '' : undefined"
     :style="{
       background: appStore.floatMode ? 'transparent' : (shellPaintsBackground ? 'transparent' : theme.body),
       color: theme.fontColor,
@@ -415,6 +414,7 @@ import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useReaderStore, fontPresets, TOC_END_CHECK_INTERVAL_MS } from '../stores/reader'
 import { useAppStore } from '../stores/app'
 import { isTauriRuntime } from '../api/transport'
+import { getCurrentWindow as getTauriCurrentWindow } from '@tauri-apps/api/window'
 import { getBookInfo, getBookshelfWithCacheInfo } from '../api/bookshelf'
 import { evalSourceClick, type ShowBrowserRequest } from '../api/sourceClick'
 import { applySystemTheme } from '../utils/systemUi'
@@ -3374,7 +3374,28 @@ function mouseButtonHotkeyAction(e: MouseEvent): HotkeyActionId | null {
  *  载体。中键/侧键在浏览器里还有默认行为 —— 中键自动滚动在 mousedown 起步,
  *  侧键前进/后退在松开时触发 —— 因此命中的按键要在 mousedown、mouseup、
  *  auxclick 三处一致地拦掉。 */
+// 悬浮模式拖动用: 缓存窗口句柄, 避免每次 mousedown 都重新取。
+let tauriDragWindow: ReturnType<typeof getTauriCurrentWindow> | null = null
+function tauriWindowForDrag() {
+  if (!tauriDragWindow) tauriDragWindow = getTauriCurrentWindow()
+  return tauriDragWindow
+}
+
 function handleReaderMouseDown(e: MouseEvent) {
+  // 悬浮文字模式: 在正文区域内按下左键(且没点在按钮/链接等交互控件上),
+  // 直接发起系统级窗口拖动。这里不用 data-tauri-drag-region——该属性只作用于
+  // 「直接命中」的元素, 点正文里的 span/p 时命中的不是带属性的 .reader-view,
+  // 于是只有边缘能拖、正文拖不动(正是用户反馈的现象)。改用 Tauri 的 startDragging()
+  // 覆盖整片正文, 同时 isReaderInteractiveClickTarget 保证控件仍可点击。
+  if (appStore.floatMode && e.button === 0 && isTauriRuntime()) {
+    const t = e.target as HTMLElement | null
+    const onReader = t?.closest('.reader-view')
+    if (onReader && !isReaderInteractiveClickTarget(t)) {
+      e.preventDefault()
+      void tauriWindowForDrag().startDragging()
+      return
+    }
+  }
   if (isMouseButtonHotkeyBlocked(e.target)) return
   if (!mouseButtonHotkeyAction(e)) return
 
