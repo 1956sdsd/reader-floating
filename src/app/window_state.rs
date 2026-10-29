@@ -366,12 +366,20 @@ impl InitialGeometry {
     /// 让用户能继续往里拖, 但不至于小到无法点击那三个按钮。
     pub const MINI_MIN_WIDTH: f64 = 240.0;
     pub const MINI_MIN_HEIGHT: f64 = 180.0;
+    /// 悬浮文字模式(F12)的最小尺寸。刻意很小: 该模式下只剩纯正文, 用户通常希望
+    /// 它变成桌面上的"小纸条", 不需要常规模式的 420×320 布局下限, 也不该被它抬回去。
+    /// 但也不能无限小 —— 至少要容得下几行字与整片正文的可拖拽区域。
+    pub const FLOAT_MIN_WIDTH: f64 = 200.0;
+    pub const FLOAT_MIN_HEIGHT: f64 = 120.0;
 
-    /// 某一模式下的尺寸下限。迷你模式用更小的下限, 否则 320×240 会被常规
-    /// 下限(420×320)抬回去, 用户永远缩不到目标尺寸。
-    pub fn min_size_for(mini_mode: bool) -> (f64, f64) {
+    /// 某一模式下的尺寸下限。优先级: 迷你 > 悬浮 > 常规。
+    /// 迷你模式用更小的下限(否则 320×240 会被常规下限抬回去); 悬浮文字模式用
+    /// 独立的极小下限; 否则常规下限 420×320。
+    pub fn min_size_for(mini_mode: bool, float_mode: bool) -> (f64, f64) {
         if mini_mode {
             (Self::MINI_MIN_WIDTH, Self::MINI_MIN_HEIGHT)
+        } else if float_mode {
+            (Self::FLOAT_MIN_WIDTH, Self::FLOAT_MIN_HEIGHT)
         } else {
             (Self::MIN_WIDTH, Self::MIN_HEIGHT)
         }
@@ -411,7 +419,7 @@ impl InitialGeometry {
                 x,
                 y,
                 &monitors,
-                Self::min_size_for(true),
+                Self::min_size_for(true, false),
             );
             return Self {
                 size,
@@ -421,7 +429,19 @@ impl InitialGeometry {
             };
         }
 
-        let (size, position, maximized) = sanitize(saved, &monitors, Self::min_size_for(false));
+        // 悬浮文字模式: 单独用极小的悬浮下限, 否则保存的小尺寸会被常规 420×320 抬回去。
+        if saved.float_mode {
+            let (size, position, maximized) =
+                sanitize(saved, &monitors, Self::min_size_for(false, true));
+            return Self {
+                size,
+                position,
+                maximized,
+                mini_mode: false,
+            };
+        }
+
+        let (size, position, maximized) = sanitize(saved, &monitors, Self::min_size_for(false, false));
         Self {
             size,
             position,
@@ -689,7 +709,7 @@ mod tests {
             10.0,
             10.0,
             &[monitor(0.0, 0.0, 1920.0, 1080.0)],
-            InitialGeometry::min_size_for(true),
+            InitialGeometry::min_size_for(true, false),
         );
         assert_eq!(size.width, InitialGeometry::MINI_MIN_WIDTH);
         assert_eq!(size.height, InitialGeometry::MINI_MIN_HEIGHT);
@@ -702,7 +722,7 @@ mod tests {
             2600.0,
             300.0,
             &[monitor(0.0, 0.0, 1920.0, 1080.0)],
-            InitialGeometry::min_size_for(true),
+            InitialGeometry::min_size_for(true, false),
         );
         assert!(position.is_none());
     }
@@ -718,7 +738,7 @@ mod tests {
             100.0,
             100.0,
             &monitors,
-            InitialGeometry::min_size_for(true),
+            InitialGeometry::min_size_for(true, false),
         );
         assert_eq!(size.width, 320.0);
         assert_eq!(size.height, 240.0);
@@ -730,7 +750,7 @@ mod tests {
             100.0,
             100.0,
             &monitors,
-            InitialGeometry::min_size_for(false),
+            InitialGeometry::min_size_for(false, false),
         );
         assert_eq!(normal_size.width, 420.0);
         assert_eq!(normal_size.height, 320.0);
@@ -739,13 +759,42 @@ mod tests {
     /// 迷你下限必须小于迷你默认尺寸, 否则用户没有可拖动的余量。
     #[test]
     fn mini_limits_are_smaller_than_mini_defaults() {
-        let (min_w, min_h) = InitialGeometry::min_size_for(true);
+        let (min_w, min_h) = InitialGeometry::min_size_for(true, false);
         assert!(min_w < InitialGeometry::MINI_WIDTH);
         assert!(min_h < InitialGeometry::MINI_HEIGHT);
         // 常规下限仍应大于迷你默认尺寸, 保证两套模式的定位不混淆。
-        let (normal_w, normal_h) = InitialGeometry::min_size_for(false);
+        let (normal_w, normal_h) = InitialGeometry::min_size_for(false, false);
         assert!(normal_w > InitialGeometry::MINI_WIDTH);
         assert!(normal_h > InitialGeometry::MINI_HEIGHT);
+    }
+
+    /// 悬浮模式必须有比常规更小的独立下限 —— 否则 F12 后仍被 420×320 抬住,
+    /// 缩不到"小纸条"尺寸; 且悬浮下限不应大于迷你下限, 否则放开就没意义。
+    #[test]
+    fn float_mode_has_its_own_smaller_minimum() {
+        let (w, h) = InitialGeometry::min_size_for(false, true);
+        assert!(w < InitialGeometry::MIN_WIDTH);
+        assert!(h < InitialGeometry::MIN_HEIGHT);
+        assert!(w <= InitialGeometry::MINI_MIN_WIDTH);
+        assert!(h <= InitialGeometry::MINI_MIN_HEIGHT);
+        // 常量是设计意图的兜底: 悬浮下限必须小于常规下限。
+        assert!(InitialGeometry::FLOAT_MIN_WIDTH < InitialGeometry::MIN_WIDTH);
+        assert!(InitialGeometry::FLOAT_MIN_HEIGHT < InitialGeometry::MIN_HEIGHT);
+    }
+
+    /// 悬浮下限在 sanitize 中必须真正生效: 一个比悬浮下限还小的保存尺寸要被抬高。
+    #[test]
+    fn float_size_is_clamped_by_float_minimum() {
+        let (size, _position) = sanitize_geometry(
+            100.0,
+            80.0,
+            10.0,
+            10.0,
+            &[monitor(0.0, 0.0, 1920.0, 1080.0)],
+            InitialGeometry::min_size_for(false, true),
+        );
+        assert_eq!(size.width, InitialGeometry::FLOAT_MIN_WIDTH);
+        assert_eq!(size.height, InitialGeometry::FLOAT_MIN_HEIGHT);
     }
 
     /// 迷你模式解析出的初始几何不应带最大化标志(两者互斥)。

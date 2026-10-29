@@ -249,7 +249,7 @@ fn start(app: &mut App, paths: &portable::Paths) -> anyhow::Result<()> {
     // 迷你模式下窗口下限更小(控件只有上一章/下一章/目录, 不需要完整布局宽度)。
     let initial_mini = saved_state.map(|s| s.mini_mode).unwrap_or(false);
     let initial_float = saved_state.map(|s| s.float_mode).unwrap_or(false);
-    let (min_width, min_height) = InitialGeometry::min_size_for(initial_mini);
+    let (min_width, min_height) = InitialGeometry::min_size_for(initial_mini, initial_float);
 
     // 首屏显示状态。窗口先隐藏建窗, 等页面加载完成(或兜底超时)再一次性显示,
     // 避免用户在 WebView2 还没画出任何内容时看到一块白板 —— 见 reveal。

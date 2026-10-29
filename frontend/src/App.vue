@@ -529,9 +529,12 @@ body.float-mode,
 #app.float-mode {
   background: transparent !important;
 }
-/* 正文字浮在任意壁纸上都要可读: 加一层柔和阴影, 类似 binbyu/Reader 的描边效果。 */
+/* 悬浮模式正文: 不要加 text-shadow。透明分层窗口(WS_EX_LAYERED)本身已禁用
+   ClearType, 文字本就偏柔; 再叠 2px 模糊阴影会让纯黑文字也显糊。去掉阴影保清晰。
+   若日后需要在花壁纸上描边, 改用 0 偏移的极细描边而非模糊阴影。 */
 .app-shell.float-mode .reader-view {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 /* 悬浮模式强制禁选: .chapter-text 及其内部 p 自带 user-select:text,
    特异性(0,1,0)/(0,2,0) 会盖掉外壳 .app-shell.float-mode 的 none(0,2,0 不带 !important),

@@ -97,7 +97,8 @@ pub fn toggle_mini_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
     let mut state = read_state(&app)?;
     let monitors = monitor_rects(&window);
     let entering_mini = !state.mini_mode;
-    let min_size = InitialGeometry::min_size_for(entering_mini);
+    // 下限要按"切换后"的完整模式算: 退出迷你时若仍处悬浮, 应用悬浮下限而非常规下限。
+    let min_size = InitialGeometry::min_size_for(entering_mini, state.float_mode);
 
     // 1) 先把当前几何固化到"切换前"的那一套, 并翻转模式标志落盘。
     if let Some(captured) = capture(&window, Some(state)) {
@@ -183,6 +184,12 @@ pub fn toggle_float_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
     // (tauri-apps/tauri#11654), 关掉它边框即消失。退出悬浮时恢复阴影, 常规窗口
     // 有阴影更自然。
     let _ = window.set_shadow(!entering_float);
+
+    // 悬浮模式放宽窗口下限: 纯正文不需要常规 420×320 的布局下限, 否则缩不到
+    // "小纸条"尺寸。退出悬浮时按当前模式(仍处迷你则用迷你下限, 否则常规下限)恢复,
+    // 不能把悬浮下限(200×120)留在常规窗口上, 否则常规窗口也能被拉到极小。
+    let effective_min = InitialGeometry::min_size_for(state.mini_mode, entering_float);
+    let _ = window.set_min_size(Some(tauri::LogicalSize::new(effective_min.0, effective_min.1)));
 
     Ok(WindowMode {
         mini_mode: state.mini_mode,
