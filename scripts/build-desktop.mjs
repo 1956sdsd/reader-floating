@@ -146,8 +146,12 @@ writeFileSync(join(stageDir, '.reader-portable'), 'Reader portable package\n')
 // data/ is created at first launch — never ship it in the zip.
 rmSync(join(stageDir, 'data'), { recursive: true, force: true })
 
-const zipPath = join(outRoot, `reader-portable-v${version}-win-x64.zip`)
+const zipName = `reader-portable-v${version}-win-x64.zip`
+const zipPath = join(outRoot, zipName)
 rmSync(zipPath, { force: true })
-run('tar.exe', ['-a', '-c', '-f', zipPath, '-C', stageDir, '.'])
+// GitHub Actions 的 Windows runner 自带 BSD libarchive 版 tar.exe, 它会把
+// "-f D:\..." 里的 "D:" 误解析为远程主机名, 报 "Cannot connect to D: resolve
+// failed"。在 outRoot 下改用相对路径执行即可规避盘符冒号问题。
+run('tar.exe', ['-a', '-c', '-f', zipName, '-C', 'Reader', '.'], outRoot)
 
 console.log(`\n完成:\n  安装包 ${nsisOut}\n  压缩包 ${zipPath}`)
