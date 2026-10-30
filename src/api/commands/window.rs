@@ -73,7 +73,7 @@ pub fn get_window_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
         .unwrap_or(false);
     Ok(WindowMode {
         mini_mode,
-        always_on_top: mini_mode || float_mode,
+        always_on_top: mini_mode,
         float_mode,
     })
 }
@@ -141,7 +141,9 @@ pub fn toggle_mini_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
         if maximized {
             let _ = window.maximize();
         }
-        let _ = window.set_always_on_top(state.float_mode);
+        // 退出迷你时按当前模式恢复置顶: 仅迷你模式置顶, 悬浮模式不再置顶
+        // (悬浮窗要能被其它窗口盖住)。若仍处悬浮则随之不置顶。
+        let _ = window.set_always_on_top(state.mini_mode);
     }
 
     // 3) 收尾: 把系统在 set_size 时做的尺寸修正(最小尺寸约束、显示器上限裁剪)
@@ -153,7 +155,7 @@ pub fn toggle_mini_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
 
     Ok(WindowMode {
         mini_mode: state.mini_mode,
-        always_on_top: state.mini_mode || state.float_mode,
+        always_on_top: state.mini_mode,
         float_mode: state.float_mode,
     })
 }
@@ -177,8 +179,9 @@ pub fn toggle_float_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
     state.float_mode = entering_float;
     write_state(&app, state)?;
 
-    // 置顶 = 迷你模式 || 悬浮模式, 两者都关才取消置顶。
-    let _ = window.set_always_on_top(state.mini_mode || entering_float);
+    // 置顶仅由迷你模式决定。悬浮文字模式不再置顶 —— 用户要求它能被资源管理器、
+    // 浏览器等其它窗口盖住, 而不是一直浮在最前。
+    let _ = window.set_always_on_top(state.mini_mode);
 
     // 悬浮模式关掉窗口阴影: Win10 下透明窗口的 DWM 阴影会被画成一圈可见边框
     // (tauri-apps/tauri#11654), 关掉它边框即消失。退出悬浮时恢复阴影, 常规窗口
@@ -193,7 +196,7 @@ pub fn toggle_float_mode(app: tauri::AppHandle) -> Result<WindowMode, String> {
 
     Ok(WindowMode {
         mini_mode: state.mini_mode,
-        always_on_top: state.mini_mode || entering_float,
+        always_on_top: state.mini_mode,
         float_mode: entering_float,
     })
 }

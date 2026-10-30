@@ -345,10 +345,9 @@ fn start(app: &mut App, paths: &portable::Paths) -> anyhow::Result<()> {
     if geometry.mini_mode {
         let _ = window.set_always_on_top(true);
     }
-    // 悬浮文字模式: 启动即置顶(透明背景由前端在 float-mode 下切到透明)。
+    // 悬浮文字模式: 启动即关阴影(否则 Win10 透明窗口会露出一圈边框, issue #11654)。
+    // 注意: 悬浮模式**不再置顶** —— 用户希望它能被其它窗口盖住, 置顶仅由迷你模式决定。
     if initial_float {
-        let _ = window.set_always_on_top(true);
-        // 启动即悬浮时一并关掉阴影, 否则 Win10 透明窗口会露出一圈边框(issue #11654)。
         let _ = window.set_shadow(false);
     }
 

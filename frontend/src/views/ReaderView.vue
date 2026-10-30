@@ -2676,6 +2676,9 @@ function handleBackgroundClick(e: Event) {
 }
 
 function handleContextMenu(event: MouseEvent) {
+  // 悬浮文字模式: 不要弹出正文右键菜单(搜索/替换/复制在 F12 下无意义, 且复制已禁用)。
+  // 模板上的 .prevent 仍会拦掉系统右键菜单, 于是 F12 下右键完全无动作。
+  if (appStore.floatMode) return
   event.preventDefault()
   const text = window.getSelection?.()?.toString().trim() || ''
   const width = 190
